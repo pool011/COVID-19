@@ -82,7 +82,7 @@ jhu_caption <- labs(caption="Data Source: Johns Hopkins University CSSE")
 
 Functions
 ```{r}
-movingAverage <- function(x, n=14, centered=TRUE) {
+movingAverage <- function(x, n=7, centered=TRUE) {
     
     if (centered) {
         before <- floor  ((n-1)/2)
@@ -345,40 +345,6 @@ saveRDS(cases_ts_states, "cases_state.rds")
 
 #cases_ts_states
 ```
-Military Cases
-```{r eval=FALSE, include=FALSE}
-cases_ts_mil <- csse_confirmed_us_ts %>%
-  select(-Lat, -Long_, -FIPS) %>%
-  filter(Admin2 %in% branches)
-cases_ts_mil
-  group_by(UID) %>%
-  gather(`1/22/20`:`4/22/20`, key = "date", value = "cases") %>% 
-  ungroup()
-cases_ts_mil
-cases_ts_mil %<>%
-  group_by(Admin2, date) %>% 
-  summarize(cases = sum(cases)) %>%
-  inner_join(military_uid, key = "Province_State") %>% 
-  ungroup() %>% 
-  group_by(Admin2) %>%
-  mutate(date = mdy(date)) %>%
-  arrange(date) %>%
-  mutate(cases_per_hundred_thousand = round((cases / Population * 100000), 1), cases_delta = cases - lag(cases), cases_relative = cases_delta / lag(cases))
-cases_ts_mil
-cases_ts_mil %<>%
-  mutate(cases_delta = case_when(
-    is.na(cases_delta) ~ as.double(cases),
-    TRUE ~ as.double(cases) - as.double(lag(cases))
-  ), cases_delta_per_hundred_thousand = round((100000 * cases_delta / Population), 1), cases_delta_ma = movingAverage(cases_delta),
-  cases_relative = case_when(
-    is.na(cases_relative) ~ 0,
-    cases_relative == Inf ~ 1,
-    TRUE ~ cases_delta / lag(cases)), cases_perc = round(100*cases_relative, 3)) %>%
-  ungroup()
-saveRDS(cases_ts_mil, "cases_mil.rds")
-
-```
-
 
 Deaths Time Series
 ```{r}
@@ -421,37 +387,6 @@ deaths_ts_states %<>%
 #  filter(!(is.na(state)), state %in% uid_states$Province_State)
 saveRDS(deaths_ts_states, "deaths_state.rds")
 #deaths_ts_states
-```
-Military Deaths
-```{r eval=FALSE, include=FALSE}
-deaths_ts_mil <- csse_deaths_us_ts %>%
-  select(-Lat, -Long_, -FIPS) %>%
-  filter(Province_State == "US Military") %>%
-  filter(!(is.na(Admin2))) %>% 
-  group_by(UID) %>%
-  gather(`1/22/20`:`4/22/20`, key = "date", value = "deaths") %>% 
-  ungroup()
-deaths_ts_mil %<>%
-  group_by(Admin2, date) %>% 
-  summarize(deaths = sum(deaths)) %>%
-  inner_join(military_uid, key = "UID") %>%
-  ungroup() %>% 
-  group_by(Admin2) %>%
-  mutate(date = mdy(date)) %>%
-  arrange(date) %>%
-  mutate(deaths_per_hundred_thousand = round((100000 * deaths / Population), 2), deaths_delta = deaths - lag(deaths), deaths_relative = deaths_delta / lag(deaths))
-deaths_ts %<>%
-  mutate(deaths_delta = case_when(
-    is.na(deaths_delta) ~ as.double(deaths),
-    deaths_delta < 0 ~ (lead(deaths_delta) + lag(deaths_delta)) / 2,
-    TRUE ~ as.double(deaths) - as.double(lag(deaths))
-  ), deaths_delta_per_hundred_thousand = round((100000 * deaths_delta / Population), 2), deaths_delta_ma = movingAverage(deaths_delta),
-  deaths_relative = case_when(
-    is.na(deaths_relative) ~ 0,
-    deaths_relative == Inf ~ 1,
-    TRUE ~ deaths_delta / lag(deaths)), deaths_perc = round((100 * deaths_relative), 3), deaths_perc_ma = movingAverage(deaths_perc)) %>%
-  ungroup()
-saveRDS(deaths_ts_mil, "deaths_mil.rds")
 ```
 
 Combined Tables
@@ -697,25 +632,68 @@ nation <- combined_ts_states %>%
   summarise(population = us_uid$Population[5], cases = sum(cases), cases_it = cases / 1000, cases_delta = sum(cases_delta), cases_per_hundred_thousand = 100000 * cases / population, cases_perc = 100 * cases_delta / lag(cases), deaths = sum(deaths), deaths_it = deaths / 1000, deaths_delta = sum(deaths_delta), deaths_perc = as.double(100 * deaths_delta / lag(deaths)), deaths_per_hundred_thousand = 100000 * deaths / population) %>% 
   ungroup()
 
+
+  
+
 nation %<>% 
-  mutate(lag_cases = as.double(lag(cases)), relative = cases_delta / lag_cases, cases_delta_ma = movingAverage(cases_delta),
-  cases_perc = case_when(
-    cases_perc == Inf ~ 100,
-    TRUE ~ (100 * sum(cases_delta) / lag_cases)), cases_dir = (cases_delta_ma < lag(cases_delta_ma)),
-  cases_perc_ma = movingAverage(cases_perc),
-  lag_deaths = as.double(lag(deaths)), relative = deaths_delta / lag_deaths, deaths_delta_ma = movingAverage(deaths_delta),
-  deaths_perc = case_when(
-    deaths_perc == Inf ~ 100,
-    TRUE ~ (100 * deaths_delta / lag_deaths)), deaths_dir = (deaths_delta_ma < lag(deaths_delta_ma)),
-  deaths_perc_ma = movingAverage(deaths_perc)) %>% 
+  mutate(lag_cases = as.double(lag(cases)), 
+         relative = cases_delta / lag_cases, 
+         cases_delta_ma = movingAverage(cases_delta),
+         cases_perc = case_when(
+           cases_perc == Inf ~ 100,
+           TRUE ~ (100 * sum(cases_delta) / lag_cases)), 
+         cases_dir = (cases_delta_ma < lag(cases_delta_ma)),
+         cases_perc_ma = movingAverage(cases_perc),
+         lag_deaths = as.double(lag(deaths)), 
+         relative = deaths_delta / lag_deaths, 
+         deaths_delta_ma = movingAverage(deaths_delta),
+         deaths_perc = case_when(
+           deaths_perc == Inf ~ 100,
+           TRUE ~ (100 * deaths_delta / lag_deaths)), deaths_dir = (deaths_delta_ma < lag(deaths_delta_ma)),
+         deaths_perc_ma = movingAverage(deaths_perc)) %>% 
   ungroup()
 nation[is.na(nation)] <- as.double(0)
 nation[nation == Inf]<- as.double(100)
 nation %<>%
   mutate(cases_dir = factor(nation$cases_dir, labels = c("red", "green")))
+
+nation_average <- nation %>% 
+  mutate(
+    week_num = epiweek(date),
+    year_num = epiyear(date),
+    cases_perc_2 = 100 * (cases_delta_ma-lag(cases_delta_ma))/lag(cases_delta_ma),
+    cases_delta_ma = round(cases_delta_ma, 0),
+    deaths_delta_ma = round(deaths_delta_ma, 0)
+    #cases_perc_3 = 
+  ) %>% 
+  select(week_num, year_num, date, cases_delta_ma, deaths_delta_ma) %>% 
+  arrange(year_num, week_num) %>%
+  group_by(year_num, week_num) %>%
+  mutate(max_date = max(date)) %>%
+  ungroup() %>% 
+  filter(date == max_date)
+
+
+nation_fourteen_days <- nation_average %>% 
+  mutate(
+    week_group = week_num - week_num %% 2 + 1 + 53 * (year_num - 2020),
+  ) %>% 
+  group_by(year_num, week_group) %>% 
+  summarize(
+    two_week_cases_delta = sum(cases_delta_ma),
+    two_week_deaths_delta = sum(deaths_delta_ma)
+  ) %>%
+  ungroup() %>% 
+  mutate(
+    cases_perc_change = 100 * (two_week_cases_delta-lag(two_week_cases_delta))/lag(two_week_cases_delta),
+    deaths_perc_change = 100 * (two_week_deaths_delta-lag(two_week_deaths_delta))/lag(two_week_deaths_delta)
+  )
 nation_last30 <- nation %>% 
   filter(date %in% sinceMarch16)
 nation_today <- tail(nation_last30, 1) %>% select(-cases_it,-deaths_it,lag_cases,-relative,-cases_delta_ma,-cases_dir,-cases_perc_ma,-lag_deaths,-deaths_delta_ma,-deaths_dir,-deaths_perc_ma)
+100 * (nation_average[59,4] - nation_average[58,4]) / nation_average[58,4]
+nation %>% filter(week(nation$date) %in% c(8,9,10), year(date) == 2021) %>% select(date, cases_delta_ma)
+plot(nation_average$deaths_delta_ma ~ nation_average$max_date)
 ```
 
 
@@ -724,9 +702,22 @@ typology <- data.frame(
   col_keys = c("", "Total", "24 Hour Change", "Total Per Hundred Thousand")
 )
 
-nation_today_cases <- nation_today %>% mutate(type="Confirmed Cases", cases_per_hundred_thousand = round(cases_per_hundred_thousand, 2)) %>% select(type, date, cases, cases_delta, cases_per_hundred_thousand) %>% rename(Date = date, "Total" = cases, "24 Hour Change" = cases_delta, "Total Per 100,000"= cases_per_hundred_thousand)
+nation_today_cases <- nation_today %>% 
+  mutate(type="Confirmed Cases", 
+         cases_per_hundred_thousand = round(cases_per_hundred_thousand, 2), 
+         "2 Week Change" = round(rev(nation_fourteen_days$cases_perc_change)[1],2)
+  ) %>% 
+  select(type, date, cases, cases_delta, cases_per_hundred_thousand, "2 Week Change") %>% 
+  rename(Date = date, "Total" = cases, "24 Hour Change" = cases_delta, "Total Per 100,000"= cases_per_hundred_thousand, "Type" = type)
 
-nation_today_deaths <- nation_today %>% mutate(type="Confirmed Deaths", deaths_per_hundred_thousand = round(deaths_per_hundred_thousand, 2)) %>% select(type, date, deaths, deaths_delta, deaths_per_hundred_thousand) %>% rename(Date = date, "Total" = deaths, "24 Hour Change" = deaths_delta, "Total Per 100,000"= deaths_per_hundred_thousand)
+nation_today_deaths <- nation_today %>% 
+  mutate(type="Confirmed Deaths", 
+         deaths_per_hundred_thousand = round(deaths_per_hundred_thousand, 2), 
+         "2 Week Change" = round(rev(nation_fourteen_days$deaths_perc_change)[1],2)
+  ) %>%
+  select(type, date, deaths, deaths_delta, deaths_per_hundred_thousand, "2 Week Change") %>% 
+  rename(Date = date, "Total" = deaths, "24 Hour Change" = deaths_delta, "Total Per 100,000"= deaths_per_hundred_thousand, "Type" = type)
+  
 
 nation_today_table <- full_join(nation_today_cases, nation_today_deaths)
 ft <- flextable(nation_today_table) 
@@ -747,7 +738,7 @@ nat_p1 <- nation_last30 %>%
     #geom_rect(nation_last30, x=nation_last30$date, y = nation_last30$cases_delta_ma, mapping = aes(xmin = lag(date), xmax = date, fill = cases_dir), ymin = 0, ymax = Inf, alpha = 0.3) + 
     scale_color_manual(values = "blue")+
     scale_fill_manual(values = c("blue", "yellow"))+
-    scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
+    scale_x_date(date_breaks = "4 weeks", date_labels = "%b %d")+
     scale_y_continuous(breaks = breaks_extended(n=5), labels = scales::label_number_si(accuracy = 10), name = "Daily Cases", sec.axis = sec_axis(trans=~./nation_last30$population * 100000, name = "Per Hundred Thousand People"))+
     labs(y = "", title = "Daily New Cases", x = "Days") +
     theme(aspect.ratio = 6/14,
@@ -781,7 +772,7 @@ nat_p4 <- nation_last30 %>% ggplot(aes(x=date,y=deaths_delta_ma)) +
     geom_area(data=nation_last30[nrow(nation_last30):nrow(nation_last30)-14,], mapping=aes(x=date, y=deaths_delta_ma), fill = "red")+
     scale_fill_manual(values = c("red", "green"))+
     scale_color_manual(values = red.fill.5)+
-    scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
+    scale_x_date(date_breaks = "4 weeks", date_labels = "%b %d")+
     scale_y_continuous(breaks = breaks_extended(n=6), labels = scales::label_number(accuracy = 1), name = "Daily Deaths", sec.axis = sec_axis(trans=~./nation_last30$population * 1000000, name = "Per Million People"))+
     labs(y = "", title = "Daily Deaths", x = "Date") +
     theme(aspect.ratio = 6/14,
@@ -810,16 +801,17 @@ nat_p2 <- nation_last30 %>% ggplot(aes(nation_last30, x=date, y=cases))+
           panel.grid.major.x=element_line(color="dark grey", size=0.1),
           panel.grid.minor.y=element_line(color="dark grey", size=0.1),
           axis.ticks=element_line(color="black")) +
-  scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
+  scale_x_date(date_breaks = "4 weeks", date_labels = "%b %d")+
   scale_y_continuous(breaks = breaks_extended(n=10), labels = scales::label_number_si(accuracy = 1), name  = "Total", sec.axis = sec_axis(trans=~./(nation_last30$population) * 1000, name = "Per Thousand People"))+
   geom_area(alpha = 0.3, fill="blue")+
   geom_hline(yintercept=max(nation_last30$cases), color="red")+
   geom_hline(yintercept=nation_last30$cases[nrow(nation_last30)-14], color="green")+pq
 nat_p2
 ```
-
 Deaths Total
 ```{r, warning=F}
+
+
 nat_p_deaths <- nation_last30 %>% ggplot(aes(nation_last30,x=date, y=deaths))+
   geom_line(size=1.1, color="#bf080e")+
   labs(title = "Cumulative Deaths", x = "Date")+
@@ -835,21 +827,49 @@ nat_p_deaths <- nation_last30 %>% ggplot(aes(nation_last30,x=date, y=deaths))+
                      name = "Total",
                      #sec.axis = dup_axis()
                      sec.axis=sec_axis(trans=~./(nation_last30$population) * 100000, name = "Per Hundred Thousand People"))+
-  scale_x_date(date_breaks = "3 weeks", date_labels = "%b %d")+
+  scale_x_date(date_breaks = "4 weeks", date_labels = "%b %d")+
   geom_area(fill="red", alpha = 0.5)+
   geom_hline(yintercept=max(nation_last30$deaths), color="red")+
   geom_hline(yintercept=nation_last30$deaths[nrow(nation_last30)-14], color="green")+pq
 nat_p_deaths
 ```
 
+Ratios
+```{r, warning=F}
+nation_percs <- nation_last30 %>% 
+  mutate(uninfected = population - cases - deaths) %>% 
+  select(date, population, cases, deaths, uninfected) %>% 
+  pivot_longer(cols=c(uninfected, cases, deaths), names_to="type", values_to="count") %>% 
+  mutate(type=factor(type, levels=c("uninfected", "cases", "deaths"))) %>% 
+  mutate(type=fct_infreq(type))
+nat_p_ratios <- nation_percs %>% ggplot(aes(x=date, y=count, fill=type, color=type))+
+  #geom_line(size=1.1)+ 
+   geom_area(alpha = 0.5)+
+  labs(title = "Ratios", x = "Date")+
+  jhu_caption+
+    theme(aspect.ratio = 6/14,
+          legend.position = "right", 
+          panel.grid.major.y=element_line(color="dark grey", size=0.1),
+          panel.grid.major.x=element_line(color="dark grey", size=0.1),
+          panel.grid.minor.y=element_line(color="dark grey", size=0.1),
+          axis.ticks=element_line(color="black")) +
+  scale_y_continuous(breaks = breaks_extended(n=7),
+                     trans="identity",
+                     labels = scales::label_number_si(accuracy = 1),
+                     name = "Total")+
+                     #sec.axis = dup_axis(),
+                     #sec.axis=sec_axis(trans=~./(nation_percs$population) * 100000, name = "Per Hundred Thousand People"))+
+  scale_x_date(date_breaks = "8 weeks", date_labels = "%b %d")
+ 
+  #geom_hline(yintercept=max(nation_percs$deaths), color="red")+
+  #geom_hline(yintercept=nation_percs$deaths[nrow(nation_percs)-14], color="green")+pq
+nat_p_ratios
+```
+
+
+
+
 Mortality Rate
 ```{r}
 mortality_rate <- (nation$deaths-lag(nation$deaths, 7)) / (lag(nation$cases, 7) - lag(nation$cases, 14)) *100
-mortality_rate[259]
-```
-
-Maps and Stuff
-```{r}
-#usstatesmap <- sf::st_read("maps/tl_2019_us_state.shp")
-#st_drivers()
 ```
